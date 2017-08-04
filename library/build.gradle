@@ -1,4 +1,5 @@
 apply plugin: 'com.android.library'
+apply plugin: 'maven'
 
 android {
     compileSdkVersion rootProject.ext.compileSdkVersion as Integer
@@ -14,6 +15,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_7
         targetCompatibility JavaVersion.VERSION_1_7
     }
+    buildToolsVersion '25.0.0'
 }
 
 dependencies {
@@ -24,4 +26,19 @@ apply from: 'gradle-maven-push.gradle'
 
 afterEvaluate {
     androidJavadocs.classpath += project.android.libraryVariants.toList().first().javaCompile.classpath
+}
+
+def mVersion = android.defaultConfig.versionName
+// install to local repository
+task install(type: Upload) {
+    description "Installs the artifacts to the local Maven repository."
+    configuration = configurations['archives']
+    repositories.mavenDeployer {
+        repository url: repositories.mavenLocal().url
+        pom.project {
+            groupId "com.teambition"
+            artifactId "stickyheadersrecyclerview"
+            version mVersion + '-SNAPSHOT'
+        }
+    }
 }
