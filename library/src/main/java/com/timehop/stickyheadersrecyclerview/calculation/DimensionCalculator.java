@@ -12,32 +12,31 @@ import static android.view.ViewGroup.MarginLayoutParams;
 public class DimensionCalculator {
 
   /**
-   * Populates {@link Rect} with margins for any view.
+   * Returns {@link Rect} representing margins for any view.
    *
-   *
-   * @param margins rect to populate
    * @param view for which to get margins
+   * @return margins for the given view. All 0 if the view does not support margins
    */
-  public void initMargins(Rect margins, View view) {
+  public Rect getMargins(View view) {
     LayoutParams layoutParams = view.getLayoutParams();
 
     if (layoutParams instanceof MarginLayoutParams) {
       MarginLayoutParams marginLayoutParams = (MarginLayoutParams) layoutParams;
-      initMarginRect(margins, marginLayoutParams);
+      return getMarginRect(marginLayoutParams);
     } else {
-        margins.set(0, 0, 0, 0);
+      return new Rect();
     }
   }
 
   /**
-   * Converts {@link MarginLayoutParams} into a representative {@link Rect}.
+   * Converts {@link MarginLayoutParams} into a representative {@link Rect}
    *
-   * @param marginRect Rect to be initialized with margins coordinates, where
-   * {@link MarginLayoutParams#leftMargin} is equivalent to {@link Rect#left}, etc.
-   * @param marginLayoutParams margins to populate the Rect with
+   * @param marginLayoutParams margins to convert to a Rect
+   * @return Rect representing margins, where {@link MarginLayoutParams#leftMargin} is equivalent to
+   * {@link Rect#left}, etc.
    */
-  private void initMarginRect(Rect marginRect, MarginLayoutParams marginLayoutParams) {
-      marginRect.set(
+  private Rect getMarginRect(MarginLayoutParams marginLayoutParams) {
+    return new Rect(
         marginLayoutParams.leftMargin,
         marginLayoutParams.topMargin,
         marginLayoutParams.rightMargin,
