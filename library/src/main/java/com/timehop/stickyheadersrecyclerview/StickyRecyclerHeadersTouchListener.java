@@ -13,11 +13,11 @@ public class StickyRecyclerHeadersTouchListener implements RecyclerView.OnItemTo
   private OnHeaderClickListener mOnHeaderClickListener;
 
   public interface OnHeaderClickListener {
-    void onHeaderClick(View header, int position, long headerId);
+    public void onHeaderClick(View header, int position, long headerId);
   }
 
   public StickyRecyclerHeadersTouchListener(final RecyclerView recyclerView,
-                                            final StickyRecyclerHeadersDecoration decor) {
+      final StickyRecyclerHeadersDecoration decor) {
     mTapDetector = new GestureDetector(recyclerView.getContext(), new SingleTapDetector());
     mRecyclerView = recyclerView;
     mDecor = decor;
@@ -40,25 +40,15 @@ public class StickyRecyclerHeadersTouchListener implements RecyclerView.OnItemTo
 
   @Override
   public boolean onInterceptTouchEvent(RecyclerView view, MotionEvent e) {
-    if (this.mOnHeaderClickListener != null) {
-      boolean tapDetectorResponse = this.mTapDetector.onTouchEvent(e);
-      if (tapDetectorResponse) {
-        // Don't return false if a single tap is detected
-        return true;
-      }
-      if (e.getAction() == MotionEvent.ACTION_DOWN) {
-        int position = mDecor.findHeaderPositionUnder((int)e.getX(), (int)e.getY());
-        return position != -1;
-      }
-    }
-    return false;
+    return mOnHeaderClickListener != null && mTapDetector.onTouchEvent(e);
   }
 
   @Override
   public void onTouchEvent(RecyclerView view, MotionEvent e) { /* do nothing? */ }
 
-  @Override public void onRequestDisallowInterceptTouchEvent(boolean disallowIntercept) {
-    // do nothing
+  @Override
+  public void onRequestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+
   }
 
   private class SingleTapDetector extends GestureDetector.SimpleOnGestureListener {
