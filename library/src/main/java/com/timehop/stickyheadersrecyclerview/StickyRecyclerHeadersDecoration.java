@@ -15,11 +15,9 @@ import com.timehop.stickyheadersrecyclerview.util.LinearLayoutOrientationProvide
 import com.timehop.stickyheadersrecyclerview.util.OrientationProvider;
 
 public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration {
-  public interface GridOffsetListener {
-      public boolean shouldHandleGrid(int position);
-  }
 
   private final StickyRecyclerHeadersAdapter mAdapter;
+  private final ItemVisibilityAdapter mVisibilityAdapter;
   private final SparseArray<Rect> mHeaderRects = new SparseArray<>();
   private final HeaderProvider mHeaderProvider;
   private final OrientationProvider mOrientationProvider;
@@ -27,47 +25,54 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
   private final HeaderRenderer mRenderer;
   private final DimensionCalculator mDimensionCalculator;
 
-  private GridOffsetListener listener;
+  /**
+   * The following field is used as a buffer for internal calculations. Its sole purpose is to avoid
+   * allocating new Rect every time we need one.
+   */
+  private final Rect mTempRect = new Rect();
 
   // TODO: Consider passing in orientation to simplify orientation accounting within calculation
   public StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter) {
-      this(adapter, null);
+    this(adapter, new LinearLayoutOrientationProvider(), new DimensionCalculator(), null);
   }
 
-  public StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, GridOffsetListener listener) {
-    this(adapter, new LinearLayoutOrientationProvider(), new DimensionCalculator());
-    this.listener = listener;
+  public StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, ItemVisibilityAdapter visibilityAdapter) {
+    this(adapter, new LinearLayoutOrientationProvider(), new DimensionCalculator(), visibilityAdapter);
   }
 
   private StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, OrientationProvider orientationProvider,
-                                          DimensionCalculator dimensionCalculator) {
+      DimensionCalculator dimensionCalculator, ItemVisibilityAdapter visibilityAdapter) {
     this(adapter, orientationProvider, dimensionCalculator, new HeaderRenderer(orientationProvider),
-        new HeaderViewCache(adapter, orientationProvider));
+        new HeaderViewCache(adapter, orientationProvider), visibilityAdapter);
   }
 
   private StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, OrientationProvider orientationProvider,
-                                          DimensionCalculator dimensionCalculator, HeaderRenderer headerRenderer, HeaderProvider headerProvider) {
+      DimensionCalculator dimensionCalculator, HeaderRenderer headerRenderer, HeaderProvider headerProvider, ItemVisibilityAdapter visibilityAdapter) {
     this(adapter, headerRenderer, orientationProvider, dimensionCalculator, headerProvider,
         new HeaderPositionCalculator(adapter, headerProvider, orientationProvider,
-            dimensionCalculator));
+            dimensionCalculator), visibilityAdapter);
   }
 
   private StickyRecyclerHeadersDecoration(StickyRecyclerHeadersAdapter adapter, HeaderRenderer headerRenderer,
-                                          OrientationProvider orientationProvider, DimensionCalculator dimensionCalculator, HeaderProvider headerProvider,
-                                          HeaderPositionCalculator headerPositionCalculator) {
+      OrientationProvider orientationProvider, DimensionCalculator dimensionCalculator, HeaderProvider headerProvider,
+      HeaderPositionCalculator headerPositionCalculator, ItemVisibilityAdapter visibilityAdapter) {
     mAdapter = adapter;
     mHeaderProvider = headerProvider;
     mOrientationProvider = orientationProvider;
     mRenderer = headerRenderer;
     mDimensionCalculator = dimensionCalculator;
     mHeaderPositionCalculator = headerPositionCalculator;
+    mVisibilityAdapter = visibilityAdapter;
   }
 
   @Override
   public void getItemOffsets(Rect outRect, View view, RecyclerView parent, RecyclerView.State state) {
     super.getItemOffsets(outRect, view, parent, state);
-    int itemPosition = parent.getChildPosition(view);
-    if (mHeaderPositionCalculator.hasNewHeader(itemPosition) || (listener != null && listener.shouldHandleGrid(itemPosition))) {
+    int itemPosition = parent.getChildAdapterPosition(view);
+    if (itemPosition == RecyclerView.NO_POSITION) {
+        return;
+    }
+    if (mHeaderPositionCalculator.hasNewHeader(itemPosition, mOrientationProvider.isReverseLayout(parent))) {
       View header = getHeaderView(parent, itemPosition);
       setItemOffsetsForHeader(outRect, header, mOrientationProvider.getOrientation(parent));
     }
@@ -81,42 +86,43 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
    * @param orientation used to calculate offset for the item
    */
   private void setItemOffsetsForHeader(Rect itemOffsets, View header, int orientation) {
-    Rect headerMargins = mDimensionCalculator.getMargins(header);
+    mDimensionCalculator.initMargins(mTempRect, header);
     if (orientation == LinearLayoutManager.VERTICAL) {
-      itemOffsets.top = header.getHeight() + headerMargins.top + headerMargins.bottom;
+      itemOffsets.top = header.getHeight() + mTempRect.top + mTempRect.bottom;
     } else {
-      itemOffsets.left = header.getWidth() + headerMargins.left + headerMargins.right;
+      itemOffsets.left = header.getWidth() + mTempRect.left + mTempRect.right;
     }
   }
 
   @Override
   public void onDrawOver(Canvas canvas, RecyclerView parent, RecyclerView.State state) {
     super.onDrawOver(canvas, parent, state);
-    mHeaderRects.clear();
 
-    if (parent.getChildCount() <= 0 || mAdapter.getItemCount() <= 0) {
+    final int childCount = parent.getChildCount();
+    if (childCount <= 0 || mAdapter.getItemCount() <= 0) {
       return;
     }
 
-    for (int i = 0; i < parent.getChildCount(); i++) {
+    for (int i = 0; i < childCount; i++) {
       View itemView = parent.getChildAt(i);
-      int position = parent.getChildPosition(itemView);
-      if (hasStickyHeader(i, position) || mHeaderPositionCalculator.hasNewHeader(position)) {
+      int position = parent.getChildAdapterPosition(itemView);
+      if (position == RecyclerView.NO_POSITION) {
+          continue;
+      }
+
+      boolean hasStickyHeader = mHeaderPositionCalculator.hasStickyHeader(itemView, mOrientationProvider.getOrientation(parent), position);
+      if (hasStickyHeader || mHeaderPositionCalculator.hasNewHeader(position, mOrientationProvider.isReverseLayout(parent))) {
         View header = mHeaderProvider.getHeader(parent, position);
-        Rect headerOffset = mHeaderPositionCalculator.getHeaderBounds(parent, header,
-            itemView, hasStickyHeader(i, position));
+        //re-use existing Rect, if any.
+        Rect headerOffset = mHeaderRects.get(position);
+        if (headerOffset == null) {
+          headerOffset = new Rect();
+          mHeaderRects.put(position, headerOffset);
+        }
+        mHeaderPositionCalculator.initHeaderBounds(headerOffset, parent, header, itemView, hasStickyHeader);
         mRenderer.drawHeader(parent, canvas, header, headerOffset);
-        mHeaderRects.put(position, headerOffset);
       }
     }
-  }
-
-  private boolean hasStickyHeader(int listChildPosition, int indexInList) {
-    if (listChildPosition > 0 || mAdapter.getHeaderId(indexInList) < 0) {
-      return false;
-    }
-
-    return true;
   }
 
   /**
@@ -130,7 +136,10 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
     for (int i = 0; i < mHeaderRects.size(); i++) {
       Rect rect = mHeaderRects.get(mHeaderRects.keyAt(i));
       if (rect.contains(x, y)) {
-        return mHeaderRects.keyAt(i);
+        int position = mHeaderRects.keyAt(i);
+        if (mVisibilityAdapter == null || mVisibilityAdapter.isPositionVisible(position)) {
+          return position;
+        }
       }
     }
     return -1;
@@ -140,8 +149,8 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
    * Gets the header view for the associated position.  If it doesn't exist yet, it will be
    * created, measured, and laid out.
    *
-   * @param parent
-   * @param position
+   * @param parent the recyclerview
+   * @param position the position to get the header view for
    * @return Header view
    */
   public View getHeaderView(RecyclerView parent, int position) {
@@ -154,5 +163,6 @@ public class StickyRecyclerHeadersDecoration extends RecyclerView.ItemDecoration
    */
   public void invalidateHeaders() {
     mHeaderProvider.invalidate();
+    mHeaderRects.clear();
   }
 }
